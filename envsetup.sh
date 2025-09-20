@@ -548,31 +548,52 @@ function lunch()
         return 1
     fi
 
-    local product release variant
+    local target product release variant
 
     # Handle the legacy format
     local legacy=$(echo $1 | grep "-")
     if [[ $# -eq 1 && -n $legacy ]]; then
-        IFS="-" read -r product release variant <<< "$1"
-        if [[ -z "$product" ]] || [[ -z "$release" ]] || [[ -z "$variant" ]]; then
-            echo "Invalid lunch combo: $1" 1>&2
-            echo "Valid combos must be of the form <product>-<release>-<variant> when using" 1>&2
-            echo "the legacy format.  Run 'lunch --help' for usage." 1>&2
-            return 1
-        fi
+        IFS="-" read -r target release variant <<< "$1"
     fi
 
     # Handle the new format.
     if [[ -z $legacy ]]; then
-        product=$1
+        target=$1
         release=$2
-        if [[ -z $release ]]; then
-            release=trunk_staging
-        fi
         variant=$3
-        if [[ -z $variant ]]; then
-            variant=eng
-        fi
+    fi
+
+    if [[ -z "$target" ]]; then
+        echo "Product not specified." 1>&2
+        echo "Run 'lunch --help' for usage." 1>&2
+        return 1
+    fi
+
+    # Handle lunch with 2 arguments, assuming $2=variant
+    if [[ -n $release && -z $variant ]]; then
+        variant=$release
+        release=
+    fi
+
+    if [[ -z "$release" ]]; then
+        # always pick the latest release (ref: https://github.com/yaap/build_make/blob/c7753b7616c75f020cd1bdb04fda05625d2649cc/envsetup.sh#L523)
+        release=$(grep "BUILD_ID" build/make/core/build_id.mk | tail -1 | cut -d '=' -f 2 | cut -d '.' -f 1 | tr '[:upper:]' '[:lower:]')
+        echo "Automatically selected latest release: ${release}"
+        export TARGET_RELEASE=$release
+    fi
+
+    if  [[ "$target" =~ ^alpha_ ]]; then
+        product=$target
+    else
+        product=alpha_$target
+    fi
+
+    check_product $product $release
+
+    if [[ -z $variant ]]; then
+        variant=user
+        echo "Automatically selected default variant: ${variant}"
+        export TARGET_BUILD_VARIANT=$variant
     fi
 
     # Validate the selection and set all the environment stuff
